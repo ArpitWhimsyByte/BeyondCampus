@@ -56,5 +56,23 @@ console.log("USER ID:", req.user?._id);
         new ApiResponse(200,myposts,"Your Posts Fetched successfully")
     )
 })
+const getSinglePost=asynchandler(async(req,res)=>{
 
-export{createPost,myPosts,getAllPosts}
+    //req.params.postId ke through clicked post ka id from URL
+    // database query on that 
+    // check if the posts exists or not 
+    //if not throw error
+    // else return the response
+
+    const ClickedPost=await Post.findById(req.params.postId).populate("author", "username fullname avatar");;
+    console.log("Value : ",ClickedPost)
+    if(!ClickedPost){
+        throw new ApiError(404,"Posts does not exists")
+    }
+
+    res.status(200).json(
+        new ApiResponse(200,ClickedPost,"Post Fetched Successfully")
+    )
+})
+
+export{createPost,myPosts,getAllPosts,getSinglePost}
