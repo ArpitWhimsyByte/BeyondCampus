@@ -70,9 +70,55 @@ const getSinglePost=asynchandler(async(req,res)=>{
         throw new ApiError(404,"Posts does not exists")
     }
 
-    res.status(200).json(
+    return res.status(200).json(
         new ApiResponse(200,ClickedPost,"Post Fetched Successfully")
     )
 })
 
-export{createPost,myPosts,getAllPosts,getSinglePost}
+const UpdatePost=asynchandler(async(req,res)=>{
+    //Take Updated Content from Frontend
+    // check for is the User logged in Or not through Verify Jwt
+    // take posts Id from Url through req.params.postId
+    // check if the posts exists or not
+    // check is post.author === req.user._id
+    // if yes then only update the post
+    // find the post through database call and do a update query
+    // save it and return the response
+
+    const {content}=req.body
+    const SelectedPost=await Post.findById(req.params.postId);
+    if(!SelectedPost){
+        throw new ApiError(404,"Posts does not exists")
+    }
+    if (!SelectedPost.author.equals(req.user._id)) {
+    throw new ApiError(403, "You are not authorized to edit this post")
+}
+    SelectedPost.content=content
+     
+    await SelectedPost.save()
+    return res.status(200).json(
+        new ApiResponse(200,SelectedPost,"Posts Updated Successfully")
+    )
+})
+
+const deletePost=asynchandler(async(req,res)=>{
+    // find the post through req.params.postId
+    // check if the posts exist or not
+    // is post.author===req.user._id logged user or not
+    // if yes delete
+    // if now throw error
+
+    const PostToDelete=await Post.findById(req.params.postId)
+    if(!PostToDelete){
+        throw new ApiError(404,"Post does not exists")
+    }
+    if(!PostToDelete.author.equals(req.user._id)){
+        throw new ApiError(403,"Invaild Authorization")
+    }
+    await PostToDelete.deleteOne()
+    return res.status(200).json(
+        new ApiResponse(200,{},"Post Deleted Successfully")
+    )
+})
+
+export{createPost,myPosts,getAllPosts,getSinglePost,UpdatePost,deletePost}
