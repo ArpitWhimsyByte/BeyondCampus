@@ -14,8 +14,9 @@ app.use(cookieParser());
 
 import userRouter from "./routes/user.routes.js"
 import postrouter from "./routes/posts.routes.js"
+import commentrouter from "./routes/comment.routes.js"
 app.use("/api/v1/users", userRouter);
 app.use("/api/v1/posts",postrouter);
-
+app.use("/api/v1/comments",commentrouter)
 
 export {app};
