@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { createPost, deletePost, getAllPosts, getSinglePost, myPosts, UpdatePost } from "../controllers/post.controller.js";
+import { createPost, deletePost, getAllPosts, getSinglePost, getUserPosts, myPosts, UpdatePost, toggleLikePost } from "../controllers/post.controller.js";
 import { upload } from "../middlewares/multer.middleware.js";
 import { verifyJWT } from "../middlewares/authmiddleware.js";
 
@@ -19,6 +19,13 @@ router.route("/createpost").post(
 router.route("/getAllPosts").get(getAllPosts)
 
 router.route("/my-posts").get(verifyJWT, myPosts)
+
+router.route("/user/:userId").get(getUserPosts)
+
+router.route("/like/:postId").post(
+    verifyJWT,
+    toggleLikePost
+)
 
 router.route("/updatepost/:postId").patch(
     verifyJWT,

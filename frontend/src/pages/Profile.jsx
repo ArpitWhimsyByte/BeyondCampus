@@ -1,22 +1,31 @@
-import { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useState, useEffect, useMemo } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import PostCard from "../components/PostCard";
-import { getMyPosts } from "../services/postService";
-import { getCurrentUser, logoutUser, updateCoverImage, updateAvatar } from "../services/authService";
+import { getMyPosts, getUserPosts, getAllPosts } from "../services/postService";
+import { getCurrentUser, getUserProfile, updateCoverImage, updateAvatar } from "../services/authService";
+import { useAuth } from "../context/AuthContext";
 import mascotImg from "../assets/husky_mascot.png";
 
 function Profile() {
+    const { userId } = useParams();
     const navigate = useNavigate();
+    const { currentUser, logout, updateUser } = useAuth();
 
-    // User state: initialize from localStorage first, then refresh from API
+    // Determine if viewing own profile
+    const isOwnProfile = useMemo(() => {
+        if (!userId) return true;
+        if (!currentUser) return false;
+        return (
+            String(currentUser._id) === String(userId) ||
+            String(currentUser.username).toLowerCase() === String(userId).toLowerCase()
+        );
+    }, [userId, currentUser]);
+
+    // Profile user state
     const [user, setUser] = useState(() => {
-        try {
-            const raw = localStorage.getItem("beyondcampus_user");
-            return raw ? JSON.parse(raw) : null;
-        } catch {
-            return null;
-        }
+        if (isOwnProfile && currentUser) return currentUser;
+        return null;
     });
 
     const [posts, setPosts] = useState([]);
@@ -29,45 +38,111 @@ function Profile() {
     const [uploadingAvatar, setUploadingAvatar] = useState(false);
     const [statusToast, setStatusToast] = useState("");
 
-    // Fetch fresh user profile & their authored posts
+    // Fetch user profile & their authored posts
     useEffect(() => {
+        let isMounted = true;
+
         const loadProfileData = async () => {
             try {
-                // Fetch fresh user data from server if session active
-                try {
-                    const userRes = await getCurrentUser();
-                    if (userRes?.data) {
-                        setUser(userRes.data);
-                        localStorage.setItem("beyondcampus_user", JSON.stringify(userRes.data));
-                    }
-                } catch (err) {
-                    console.warn("Could not refresh user session from server, using local data:", err);
-                }
-
-                // Fetch current user's authored posts
                 setLoadingPosts(true);
-                const postsRes = await getMyPosts();
-                if (postsRes?.data && Array.isArray(postsRes.data)) {
-                    setPosts(postsRes.data);
-                } else if (Array.isArray(postsRes)) {
-                    setPosts(postsRes);
+                setError("");
+
+                if (isOwnProfile) {
+                    // 1. Fetch fresh current user data from server
+                    try {
+                        const userRes = await getCurrentUser();
+                        if (userRes?.data && isMounted) {
+                            setUser(userRes.data);
+                            updateUser(userRes.data);
+                        }
+                    } catch (err) {
+                        console.warn("Could not refresh user session from server, using context data:", err);
+                        if (currentUser && isMounted) setUser(currentUser);
+                    }
+
+                    // 2. Fetch current user's authored posts
+                    const postsRes = await getMyPosts();
+                    const postsData = postsRes?.data || postsRes || [];
+                    if (isMounted) {
+                        setPosts(Array.isArray(postsData) ? postsData : []);
+                    }
                 } else {
-                    setPosts([]);
+                    // Viewing another builder's profile!
+                    let targetUser = null;
+                    try {
+                        const profileRes = await getUserProfile(userId);
+                        targetUser = profileRes?.data || profileRes;
+                    } catch (pErr) {
+                        console.warn("Could not fetch user profile via endpoint, trying fallback:", pErr);
+                    }
+
+                    let targetPosts = [];
+                    try {
+                        const postsRes = await getUserPosts(userId);
+                        targetPosts = postsRes?.data || postsRes || [];
+                    } catch (uErr) {
+                        console.warn("Could not fetch user posts via endpoint, trying fallback:", uErr);
+                    }
+
+                    // Robust Fallback: search all posts if endpoint missed
+                    if (!targetUser || !Array.isArray(targetPosts) || targetPosts.length === 0) {
+                        try {
+                            const allRes = await getAllPosts();
+                            const allPosts = allRes?.data || allRes || [];
+                            const matchedPosts = allPosts.filter((p) => {
+                                const pAuthor = p.author;
+                                if (!pAuthor) return false;
+                                return (
+                                    String(pAuthor._id) === String(userId) ||
+                                    String(pAuthor.username).toLowerCase() === String(userId).toLowerCase()
+                                );
+                            });
+                            if (matchedPosts.length > 0) {
+                                if (!targetUser) targetUser = matchedPosts[0].author;
+                                if (!Array.isArray(targetPosts) || targetPosts.length === 0) {
+                                    targetPosts = matchedPosts;
+                                }
+                            }
+                        } catch (fErr) {
+                            console.error("Fallback error finding user posts:", fErr);
+                        }
+                    }
+
+                    if (isMounted) {
+                        if (targetUser) {
+                            setUser(targetUser);
+                        } else {
+                            setUser({
+                                username: userId,
+                                fullname: "Collegiate Builder",
+                                avatar: "",
+                                coverImage: "",
+                                createdAt: new Date().toISOString(),
+                            });
+                        }
+                        setPosts(Array.isArray(targetPosts) ? targetPosts : []);
+                    }
                 }
             } catch (err) {
-                console.error("Error loading profile posts:", err);
-                setError(
-                    err.response?.data?.message ||
-                    err.message ||
-                    "Failed to load user broadcasts. Please sign in again."
-                );
+                console.error("Error loading profile data:", err);
+                if (isMounted) {
+                    setError(
+                        err.response?.data?.message ||
+                        err.message ||
+                        "Failed to load builder profile."
+                    );
+                }
             } finally {
-                setLoadingPosts(false);
+                if (isMounted) setLoadingPosts(false);
             }
         };
 
         loadProfileData();
-    }, []);
+
+        return () => {
+            isMounted = false;
+        };
+    }, [userId, isOwnProfile]);
 
     // Cover image upload handler
     const handleCoverChange = async (e) => {
@@ -92,7 +167,7 @@ function Profile() {
 
             if (updatedUser) {
                 setUser(updatedUser);
-                localStorage.setItem("beyondcampus_user", JSON.stringify(updatedUser));
+                updateUser(updatedUser);
                 setStatusToast("Cover image updated successfully!");
             }
         } catch (err) {
@@ -131,7 +206,7 @@ function Profile() {
 
             if (updatedUser) {
                 setUser(updatedUser);
-                localStorage.setItem("beyondcampus_user", JSON.stringify(updatedUser));
+                updateUser(updatedUser);
                 setStatusToast("Avatar updated successfully!");
             }
         } catch (err) {
@@ -152,14 +227,28 @@ function Profile() {
         setPosts((prev) => prev.filter((p) => p._id !== deletedId));
     };
 
+    // Post updated callback (e.g. likes toggled)
+    const handlePostUpdated = (postId, updateData) => {
+        setPosts((prev) =>
+            prev.map((p) => {
+                if (p._id === postId) {
+                    return {
+                        ...p,
+                        likes: updateData.likes || p.likes,
+                    };
+                }
+                return p;
+            })
+        );
+    };
+
     // Logout handler
     const handleLogout = async () => {
         try {
-            await logoutUser();
+            await logout();
         } catch (err) {
             console.error("Logout error:", err);
         } finally {
-            localStorage.removeItem("beyondcampus_user");
             navigate("/login");
         }
     };
@@ -193,7 +282,9 @@ function Profile() {
                         <span>Feed</span>
                     </Link>
                     <span className="text-zinc-600">/</span>
-                    <span className="text-zinc-200 font-bold">Builder Profile</span>
+                    <span className="text-zinc-200 font-bold">
+                        {isOwnProfile ? "My Builder Profile" : `@${user?.username || userId || "Builder"}'s Profile`}
+                    </span>
                 </div>
 
                 {/* Status / Error Toast Notification */}
@@ -227,25 +318,27 @@ function Profile() {
                     {/* Cover Banner Area */}
                     <div className="h-44 sm:h-60 w-full relative overflow-hidden bg-gradient-to-r from-[#141419] via-[#111115] to-[#0a0a0d] border-b border-zinc-850">
                         
-                        {/* Cover Image Upload Button */}
-                        <label className="absolute top-4 right-4 z-20 px-3.5 py-1.5 bg-black/85 hover:bg-black border border-zinc-700 hover:border-[#fab818] text-xs font-mono font-bold uppercase tracking-wider text-zinc-200 hover:text-white transition cursor-pointer flex items-center gap-2 shadow-2xl backdrop-blur-md">
-                            {uploadingCover ? (
-                                <div className="w-3.5 h-3.5 border-2 border-[#fab818] border-t-transparent animate-spin" />
-                            ) : (
-                                <svg className="w-4 h-4 text-[#fab818]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                                </svg>
-                            )}
-                            <span>{uploadingCover ? "Uploading..." : user?.coverImage ? "Change Cover" : "Upload Cover"}</span>
-                            <input
-                                type="file"
-                                accept="image/*"
-                                disabled={uploadingCover}
-                                onChange={handleCoverChange}
-                                className="hidden"
-                            />
-                        </label>
+                        {/* Cover Image Upload Button (Own Profile Only) */}
+                        {isOwnProfile && (
+                            <label className="absolute top-4 right-4 z-20 px-3.5 py-1.5 bg-black/85 hover:bg-black border border-zinc-700 hover:border-[#fab818] text-xs font-mono font-bold uppercase tracking-wider text-zinc-200 hover:text-white transition cursor-pointer flex items-center gap-2 shadow-2xl backdrop-blur-md">
+                                {uploadingCover ? (
+                                    <div className="w-3.5 h-3.5 border-2 border-[#fab818] border-t-transparent animate-spin" />
+                                ) : (
+                                    <svg className="w-4 h-4 text-[#fab818]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    </svg>
+                                )}
+                                <span>{uploadingCover ? "Uploading..." : user?.coverImage ? "Change Cover" : "Upload Cover"}</span>
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    disabled={uploadingCover}
+                                    onChange={handleCoverChange}
+                                    className="hidden"
+                                />
+                            </label>
+                        )}
 
                         {/* Banner Image or High-Tech Cyber Grid */}
                         {user?.coverImage ? (
@@ -294,26 +387,28 @@ function Profile() {
                                         </span>
                                     )}
 
-                                    {/* Hover Overlay to Edit Avatar */}
-                                    <label className="absolute inset-0 bg-black/80 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-[10px] font-mono font-bold text-white cursor-pointer transition-opacity backdrop-blur-xs">
-                                        {uploadingAvatar ? (
-                                            <div className="w-4 h-4 border-2 border-[#fab818] border-t-transparent animate-spin" />
-                                        ) : (
-                                            <>
-                                                <svg className="w-5 h-5 text-[#fab818]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                                                </svg>
-                                                <span className="mt-1 uppercase tracking-wider">Change</span>
-                                            </>
-                                        )}
-                                        <input
-                                            type="file"
-                                            accept="image/*"
-                                            disabled={uploadingAvatar}
-                                            onChange={handleAvatarChange}
-                                            className="hidden"
-                                        />
-                                    </label>
+                                    {/* Hover Overlay to Edit Avatar (Own Profile Only) */}
+                                    {isOwnProfile && (
+                                        <label className="absolute inset-0 bg-black/80 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-[10px] font-mono font-bold text-white cursor-pointer transition-opacity backdrop-blur-xs">
+                                            {uploadingAvatar ? (
+                                                <div className="w-4 h-4 border-2 border-[#fab818] border-t-transparent animate-spin" />
+                                            ) : (
+                                                <>
+                                                    <svg className="w-5 h-5 text-[#fab818]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                                                    </svg>
+                                                    <span className="mt-1 uppercase tracking-wider">Change</span>
+                                                </>
+                                            )}
+                                            <input
+                                                type="file"
+                                                accept="image/*"
+                                                disabled={uploadingAvatar}
+                                                onChange={handleAvatarChange}
+                                                className="hidden"
+                                            />
+                                        </label>
+                                    )}
 
                                     {/* Online indicator dot */}
                                     <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-400 border-2 border-black z-10" />
@@ -349,20 +444,31 @@ function Profile() {
 
                             {/* Action Buttons */}
                             <div className="flex items-center gap-3 self-start md:self-auto">
-                                <Link
-                                    to="/create-post"
-                                    className="px-5 py-2.5 bg-[#fab818] hover:bg-[#ffdb24] text-slate-950 font-black text-xs uppercase tracking-wider shadow-md transition cursor-pointer flex items-center gap-2"
-                                >
-                                    <span>+ New Broadcast</span>
-                                </Link>
+                                {isOwnProfile ? (
+                                    <>
+                                        <Link
+                                            to="/create-post"
+                                            className="px-5 py-2.5 bg-[#fab818] hover:bg-[#ffdb24] text-slate-950 font-black text-xs uppercase tracking-wider shadow-md transition cursor-pointer flex items-center gap-2"
+                                        >
+                                            <span>+ New Broadcast</span>
+                                        </Link>
 
-                                <button
-                                    type="button"
-                                    onClick={handleLogout}
-                                    className="px-4 py-2.5 border border-zinc-800 bg-zinc-900 hover:bg-rose-950/40 hover:border-rose-800/80 text-zinc-400 hover:text-rose-400 font-bold text-xs uppercase tracking-wider transition cursor-pointer"
-                                >
-                                    Sign Out
-                                </button>
+                                        <button
+                                            type="button"
+                                            onClick={handleLogout}
+                                            className="px-4 py-2.5 border border-zinc-800 bg-zinc-900 hover:bg-rose-950/40 hover:border-rose-800/80 text-zinc-400 hover:text-rose-400 font-bold text-xs uppercase tracking-wider transition cursor-pointer"
+                                        >
+                                            Sign Out
+                                        </button>
+                                    </>
+                                ) : (
+                                    <Link
+                                        to="/"
+                                        className="px-5 py-2.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 hover:border-[#fab818] text-[#fab818] font-mono font-bold text-xs uppercase tracking-wider transition flex items-center gap-2 shadow-lg"
+                                    >
+                                        <span>← Back to Feed</span>
+                                    </Link>
+                                )}
                             </div>
 
                         </div>
@@ -443,7 +549,7 @@ function Profile() {
                                         : "text-zinc-400 hover:text-white hover:bg-zinc-900"
                                 }`}
                             >
-                                My Broadcasts ({postCount})
+                                {isOwnProfile ? `My Broadcasts (${postCount})` : `Broadcasts (${postCount})`}
                             </button>
 
                             <button
@@ -458,27 +564,29 @@ function Profile() {
                                 Accolades &amp; Squads
                             </button>
 
-                            <button
-                                type="button"
-                                onClick={() => setActiveTab("protocols")}
-                                className={`px-5 py-2 text-xs font-mono font-bold uppercase tracking-wider transition-all cursor-pointer ${
-                                    activeTab === "protocols"
-                                        ? "bg-[#fab818] text-slate-950 shadow-sm"
-                                        : "text-zinc-400 hover:text-white hover:bg-zinc-900"
-                                }`}
-                            >
-                                Account Protocols
-                            </button>
+                            {isOwnProfile && (
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveTab("protocols")}
+                                    className={`px-5 py-2 text-xs font-mono font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                                        activeTab === "protocols"
+                                            ? "bg-[#fab818] text-slate-950 shadow-sm"
+                                            : "text-zinc-400 hover:text-white hover:bg-zinc-900"
+                                    }`}
+                                >
+                                    Account Protocols
+                                </button>
+                            )}
                         </div>
 
-                        {/* TAB 1: MY BROADCASTS */}
+                        {/* TAB 1: BROADCAST STREAM */}
                         {activeTab === "posts" && (
                             <div className="space-y-4">
                                 {loadingPosts ? (
                                     <div className="border border-zinc-800 bg-[#111114] p-12 text-center space-y-3">
-                                        <div className="w-8 h-8 border-2 border-[#fab818] border-t-transparent animate-spin mx-auto" />
+                                        <div className="w-6 h-6 border-2 border-[#fab818] border-t-transparent animate-spin mx-auto" />
                                         <p className="text-xs font-mono text-zinc-400 uppercase tracking-wider">
-                                            Retrieving your campus milestones...
+                                            Retrieving campus milestones...
                                         </p>
                                     </div>
                                 ) : posts.length > 0 ? (
@@ -488,6 +596,7 @@ function Profile() {
                                                 key={post._id}
                                                 post={post}
                                                 onPostDeleted={handlePostDeleted}
+                                                onPostUpdated={handlePostUpdated}
                                             />
                                         ))}
                                     </div>
@@ -507,17 +616,28 @@ function Profile() {
                                                 No Broadcasts Published Yet
                                             </h3>
                                             <p className="text-xs text-zinc-400 leading-relaxed font-mono">
-                                                Share your hackathon project architecture, placement roadmap, or engineering doubts with 5,000+ peers.
+                                                {isOwnProfile
+                                                    ? "Share your hackathon project architecture, placement roadmap, or engineering doubts with 5,000+ peers."
+                                                    : `@${user?.username || "This builder"} has not published any broadcasts to the campus feed yet.`}
                                             </p>
                                         </div>
 
                                         <div>
-                                            <Link
-                                                to="/create-post"
-                                                className="inline-flex items-center gap-2 px-6 py-2.5 bg-[#fab818] hover:bg-[#ffdb24] text-slate-950 font-black text-xs uppercase tracking-wider shadow-md transition"
-                                            >
-                                                <span>Publish Your First Milestone &rarr;</span>
-                                            </Link>
+                                            {isOwnProfile ? (
+                                                <Link
+                                                    to="/create-post"
+                                                    className="inline-flex items-center gap-2 px-6 py-2.5 bg-[#fab818] hover:bg-[#ffdb24] text-slate-950 font-black text-xs uppercase tracking-wider shadow-md transition"
+                                                >
+                                                    <span>Publish Your First Milestone &rarr;</span>
+                                                </Link>
+                                            ) : (
+                                                <Link
+                                                    to="/"
+                                                    className="inline-flex items-center gap-2 px-6 py-2.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-[#fab818] font-mono font-bold text-xs uppercase tracking-wider transition"
+                                                >
+                                                    <span>Explore Campus Feed &rarr;</span>
+                                                </Link>
+                                            )}
                                         </div>
                                     </div>
                                 )}

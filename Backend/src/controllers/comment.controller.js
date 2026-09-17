@@ -81,6 +81,9 @@ const deleteComment=asynchandler(async(req,res)=>{
     if(!comment){
         throw new ApiError(404,"Comment Not Found")
     }
+    if(!comment.createdBy.equals(req.user._id)){
+        throw new ApiError(403, "You are not authorized to delete this comment")
+    }
     await comment.deleteOne();
     return res.status(200).json(
         new ApiResponse(200,null,"Comment deleted successfully")

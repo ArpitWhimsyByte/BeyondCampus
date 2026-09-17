@@ -1,10 +1,14 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import mascotImg from "../assets/husky_mascot.png";
-import { loginUser } from "../services/authService";
+import { useAuth } from "../context/AuthContext";
 
 function Login() {
     const navigate = useNavigate();
+    const location = useLocation();
+    const { login } = useAuth();
+
+    const from = location.state?.from?.pathname || "/";
 
     const [formData, setFormData] = useState({
         identifier: "", // Can be email or username
@@ -42,23 +46,18 @@ function Login() {
         try {
             setLoading(true);
 
-            const response = await loginUser({
+            // Calls AuthContext login which hits /users/login and updates currentUser state
+            await login({
                 username: identifier,
                 email: identifier,
                 password: password
             });
 
-            if (response?.data?.user) {
-                localStorage.setItem("beyondcampus_user", JSON.stringify(response.data.user));
-            } else if (response?.data) {
-                localStorage.setItem("beyondcampus_user", JSON.stringify(response.data));
-            }
-
-            setSuccess("Login successful! Redirecting to home feed...");
+            setSuccess("Login successful! Redirecting...");
 
             setTimeout(() => {
-                navigate("/");
-            }, 1200);
+                navigate(from, { replace: true });
+            }, 1000);
         } catch (err) {
             const serverMessage =
                 err.response?.data?.message ||
@@ -70,6 +69,7 @@ function Login() {
             setLoading(false);
         }
     };
+
 
     return (
         <div className="min-h-screen w-full bg-[#fab818] text-slate-900 flex flex-col lg:flex-row relative overflow-x-hidden font-sans selection:bg-teal-300 selection:text-slate-900">

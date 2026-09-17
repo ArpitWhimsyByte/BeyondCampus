@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import { User } from "../models/user.models.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
@@ -235,4 +236,23 @@ const updateUserAvatar = asynchandler(async (req, res) => {
     .json(new ApiResponse(200, user, "Avatar updated successfully"));
 });
 
-export { registerUser, loginUser, logoutUser, getCurrentUser, updateUserCoverImage, updateUserAvatar }
+const getUserProfile = asynchandler(async (req, res) => {
+  const { userId } = req.params;
+  let user = null;
+
+  if (mongoose.isValidObjectId(userId)) {
+    user = await User.findById(userId).select("-password -refreshToken");
+  }
+  if (!user) {
+    user = await User.findOne({ username: userId }).select("-password -refreshToken");
+  }
+  if (!user) {
+    throw new ApiError(404, "Collegiate builder not found");
+  }
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, user, "User profile fetched successfully"));
+});
+
+export { registerUser, loginUser, logoutUser, getCurrentUser, updateUserCoverImage, updateUserAvatar, getUserProfile }

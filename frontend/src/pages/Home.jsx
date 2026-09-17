@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import ShowcaseHero from "../components/ShowcaseHero";
 import CampusMarquee from "../components/CampusMarquee";
@@ -14,6 +14,7 @@ import mascotImg from "../assets/husky_mascot.png";
 
 function Home() {
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
     const [posts, setPosts] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
@@ -57,6 +58,24 @@ function Home() {
         fetchPosts();
     }, []);
 
+    // Sync tab and search filters from URL query parameters (e.g. from Navbar on another page)
+    useEffect(() => {
+        const tabParam = searchParams.get("tab");
+        if (tabParam && ["all", "hackathons", "circles", "roadmaps"].includes(tabParam)) {
+            setActiveTab(tabParam);
+            setTimeout(() => {
+                document.getElementById("feed-stream")?.scrollIntoView({ behavior: "smooth" });
+            }, 150);
+        }
+        const searchParam = searchParams.get("search");
+        if (searchParam !== null) {
+            setSearchQuery(searchParam);
+            setTimeout(() => {
+                document.getElementById("feed-stream")?.scrollIntoView({ behavior: "smooth" });
+            }, 150);
+        }
+    }, [searchParams]);
+
     // Prepend newly created post to top of feed
     const handlePostCreated = (newPost) => {
         setPosts((prev) => [newPost, ...prev]);
@@ -68,6 +87,21 @@ function Home() {
     // Filter out deleted post from feed
     const handlePostDeleted = (deletedPostId) => {
         setPosts((prev) => prev.filter((p) => p._id !== deletedPostId));
+    };
+
+    // Update post likes/data when updated from PostCard
+    const handlePostUpdated = (postId, updateData) => {
+        setPosts((prev) =>
+            prev.map((p) => {
+                if (p._id === postId) {
+                    return {
+                        ...p,
+                        likes: updateData.likes || p.likes,
+                    };
+                }
+                return p;
+            })
+        );
     };
 
     // Quick scroll to create post section and focus input
@@ -345,6 +379,7 @@ function Home() {
                                         key={post._id}
                                         post={post}
                                         onPostDeleted={handlePostDeleted}
+                                        onPostUpdated={handlePostUpdated}
                                     />
                                 ))}
                             </div>

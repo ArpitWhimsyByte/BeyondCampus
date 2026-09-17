@@ -30,3 +30,22 @@ export const getMyPosts = async () => {
     return response.data;
 };
 
+// Update post content
+export const updatePost = async (postId, data) => {
+    const response = await api.patch(`/posts/updatepost/${postId}`, data);
+    return response.data;
+};
+
+// Get posts by specific user id or username
+export const getUserPosts = async (userId) => {
+    const response = await api.get(`/posts/user/${userId}`);
+    return response.data;
+};
+
+// Toggle like / unlike on a post
+export const toggleLikePost = async (postId) => {
+    const response = await api.post(`/posts/like/${postId}`);
+    return response.data;
+};
+
+

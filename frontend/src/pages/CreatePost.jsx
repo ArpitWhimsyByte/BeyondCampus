@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import { createPost } from "../services/postService";
+import { useAuth } from "../context/AuthContext";
 import mascotImg from "../assets/husky_mascot.png";
 
 // Preset collegiate tracks (Clean SVG icons, no emojis)
@@ -194,16 +195,7 @@ function parseInlineMarkdown(str) {
 function CreatePost() {
     const navigate = useNavigate();
     const textareaRef = useRef(null);
-
-    // Current user state from localStorage
-    const [currentUser] = useState(() => {
-        try {
-            const raw = localStorage.getItem("beyondcampus_user");
-            return raw ? JSON.parse(raw) : null;
-        } catch {
-            return null;
-        }
-    });
+    const { currentUser } = useAuth();
 
     // Form inputs
     const [selectedTrack, setSelectedTrack] = useState(TRACKS[0]);

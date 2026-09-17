@@ -1,5 +1,7 @@
+import mongoose from "mongoose";
 import { upload } from "../middlewares/multer.middleware.js";
 import { Post } from "../models/post.models.js";
+import { User } from "../models/user.models.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asynchandler } from "../utils/asynchandler.js";
@@ -120,4 +122,61 @@ const deletePost=asynchandler(async(req,res)=>{
     )
 })
 
-export{createPost,myPosts,getAllPosts,getSinglePost,UpdatePost,deletePost}
+const getUserPosts = asynchandler(async (req, res) => {
+    const { userId } = req.params;
+    let targetAuthorId = userId;
+
+    if (!mongoose.isValidObjectId(userId)) {
+        const targetUser = await User.findOne({ username: userId });
+        if (!targetUser) {
+            return res.status(200).json(new ApiResponse(200, [], "User posts fetched successfully"));
+        }
+        targetAuthorId = targetUser._id;
+    }
+
+    const posts = await Post.find({ author: targetAuthorId })
+        .populate("author", "username fullname avatar")
+        .sort({ createdAt: -1 });
+
+    return res.status(200).json(
+        new ApiResponse(200, posts, "User posts fetched successfully")
+    );
+});
+
+const toggleLikePost = asynchandler(async (req, res) => {
+    const { postId } = req.params;
+    if (!mongoose.isValidObjectId(postId)) {
+        throw new ApiError(400, "Invalid Post ID");
+    }
+
+    const post = await Post.findById(postId);
+    if (!post) {
+        throw new ApiError(404, "Post does not exist");
+    }
+
+    const userId = req.user._id;
+    const isLiked = post.likes.some((id) => id.equals(userId));
+
+    if (isLiked) {
+        post.likes = post.likes.filter((id) => !id.equals(userId));
+    } else {
+        post.likes.push(userId);
+    }
+
+    await post.save();
+
+    return res.status(200).json(
+        new ApiResponse(
+            200,
+            {
+                postId: post._id,
+                likes: post.likes,
+                likesCount: post.likes.length,
+                isLiked: !isLiked
+            },
+            isLiked ? "Post unliked successfully" : "Post liked successfully"
+        )
+    );
+});
+
+export { createPost, myPosts, getAllPosts, getSinglePost, UpdatePost, deletePost, getUserPosts, toggleLikePost }

@@ -37,3 +37,8 @@ export const updateAvatar = async (formData) => {
     });
     return response.data;
 };
+
+export const getUserProfile = async (userId) => {
+    const response = await api.get(`/users/profile/${userId}`);
+    return response.data;
+};
