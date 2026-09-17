@@ -1,15 +1,17 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 
 import Home from "./pages/Home";
-import Login from "./pages/login";
+import Login from "./pages/Login";
 import Register from "./pages/Register";
 import CreatePost from "./pages/CreatePost";
 import PostDetails from "./pages/PostDetails";
 import Profile from "./pages/Profile";
+import PostSuccessTakeover from "./components/PostSuccessTakeover";
 
 function App() {
     return (
         <BrowserRouter>
+            <PostSuccessTakeover />
             <Routes>
 
                 <Route path="/" element={<Home />} />

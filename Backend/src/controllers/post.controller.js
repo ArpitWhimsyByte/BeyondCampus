@@ -16,16 +16,15 @@ const createPost = asynchandler(async (req, res) => {
     ) {
         throw new ApiError(400, "Title and Content are Required");
     }
-    const imageLocalPath=req.files?.image[0]?.path;
-    const image= imageLocalPath
+    const imageLocalPath = req.files?.image?.[0]?.path;
+    const image = imageLocalPath
         ? await uploadOnCloudinary(imageLocalPath)
         : null;
-    
 
     const post = await Post.create({
         title,
         content,
-        image:image.url || "",
+        image: image?.url || "",
         author: req.user._id
     });
     return res.status(201).json(
