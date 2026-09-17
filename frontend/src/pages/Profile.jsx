@@ -33,6 +33,13 @@ function Profile() {
     const [activeTab, setActiveTab] = useState("posts"); // 'posts' | 'badges' | 'protocols'
     const [error, setError] = useState("");
 
+    // Sync user state with currentUser when viewing own profile
+    useEffect(() => {
+        if (isOwnProfile && currentUser) {
+            setUser((prev) => prev || currentUser);
+        }
+    }, [isOwnProfile, currentUser]);
+
     // Uploading states & status toast
     const [uploadingCover, setUploadingCover] = useState(false);
     const [uploadingAvatar, setUploadingAvatar] = useState(false);
@@ -49,9 +56,11 @@ function Profile() {
 
                 if (isOwnProfile) {
                     // 1. Fetch fresh current user data from server
+                    let activeUser = currentUser;
                     try {
                         const userRes = await getCurrentUser();
                         if (userRes?.data && isMounted) {
+                            activeUser = userRes.data;
                             setUser(userRes.data);
                             updateUser(userRes.data);
                         }
@@ -61,10 +70,52 @@ function Profile() {
                     }
 
                     // 2. Fetch current user's authored posts
-                    const postsRes = await getMyPosts();
-                    const postsData = postsRes?.data || postsRes || [];
+                    let myAuthoredPosts = [];
+                    try {
+                        const postsRes = await getMyPosts();
+                        const postsData = postsRes?.data || postsRes || [];
+                        if (Array.isArray(postsData)) {
+                            myAuthoredPosts = postsData;
+                        }
+                    } catch (pErr) {
+                        console.warn("getMyPosts failed, attempting fallback fetching:", pErr);
+                    }
+
+                    // Fallback 1: If myPosts is empty or failed, fetch by userId via getUserPosts
+                    const targetId = activeUser?._id || currentUser?._id;
+                    if ((!myAuthoredPosts || myAuthoredPosts.length === 0) && targetId) {
+                        try {
+                            const uPostsRes = await getUserPosts(targetId);
+                            const uPosts = uPostsRes?.data || uPostsRes || [];
+                            if (Array.isArray(uPosts) && uPosts.length > 0) {
+                                myAuthoredPosts = uPosts;
+                            }
+                        } catch (uErr) {
+                            console.warn("getUserPosts fallback failed:", uErr);
+                        }
+                    }
+
+                    // Fallback 2: Filter from getAllPosts
+                    if ((!myAuthoredPosts || myAuthoredPosts.length === 0) && targetId) {
+                        try {
+                            const allRes = await getAllPosts();
+                            const allPosts = allRes?.data || allRes || [];
+                            if (Array.isArray(allPosts)) {
+                                const matched = allPosts.filter((p) => {
+                                    const aId = p.author?._id || p.author;
+                                    return String(aId) === String(targetId);
+                                });
+                                if (matched.length > 0) {
+                                    myAuthoredPosts = matched;
+                                }
+                            }
+                        } catch (aErr) {
+                            console.warn("getAllPosts filter fallback failed:", aErr);
+                        }
+                    }
+
                     if (isMounted) {
-                        setPosts(Array.isArray(postsData) ? postsData : []);
+                        setPosts(myAuthoredPosts);
                     }
                 } else {
                     // Viewing another builder's profile!
@@ -142,7 +193,7 @@ function Profile() {
         return () => {
             isMounted = false;
         };
-    }, [userId, isOwnProfile]);
+    }, [userId, isOwnProfile, currentUser?._id]);
 
     // Cover image upload handler
     const handleCoverChange = async (e) => {

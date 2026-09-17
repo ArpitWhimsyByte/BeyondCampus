@@ -3,9 +3,29 @@ import cookieParser from "cookie-parser";
 import cors from "cors"
 const app=express()
 
+const allowedOrigins = [
+    "https://beyond-campus-nine.vercel.app",
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:5173",
+    process.env.CORS_ORIGIN
+].filter(Boolean);
+
 app.use(cors({
-    origin: "https://beyond-campus-nine.vercel.app",
-    credentials: true
+    origin: function (origin, callback) {
+        if (!origin) return callback(null, true);
+        if (
+            allowedOrigins.includes(origin) ||
+            allowedOrigins.some((allowed) => origin.startsWith(allowed)) ||
+            origin.endsWith(".vercel.app")
+        ) {
+            return callback(null, true);
+        }
+        return callback(null, true);
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
 }));
 
 app.use(express.json({ limit: "16kb" }));

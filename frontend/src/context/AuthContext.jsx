@@ -4,11 +4,18 @@ import { getCurrentUser, loginUser, logoutUser } from "../services/authService";
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-    const [currentUser, setCurrentUser] = useState(null);
+    const [currentUser, setCurrentUser] = useState(() => {
+        try {
+            const saved = localStorage.getItem("beyondcampus_user");
+            return saved ? JSON.parse(saved) : null;
+        } catch {
+            return null;
+        }
+    });
     const [loading, setLoading] = useState(true);
 
     // Authoritative session verification against the Express backend
-    // Checks HTTP-only cookies sent automatically by Axios (withCredentials: true)
+    // Works with both HTTP-only cookies and Authorization Bearer header
     const checkAuth = useCallback(async () => {
         try {
             setLoading(true);
@@ -16,18 +23,35 @@ export function AuthProvider({ children }) {
             const user = response?.data || response;
             if (user && user._id) {
                 setCurrentUser(user);
+                localStorage.setItem("beyondcampus_user", JSON.stringify(user));
             } else {
                 setCurrentUser(null);
+                localStorage.removeItem("beyondcampus_user");
+                localStorage.removeItem("beyondcampus_token");
             }
         } catch (error) {
-            // 401 Unauthorized or network failure implies no active session
-            setCurrentUser(null);
+            // 401 Unauthorized or 403 Forbidden indicates token/cookie is genuinely invalid or expired
+            if (error.response?.status === 401 || error.response?.status === 403) {
+                setCurrentUser(null);
+                localStorage.removeItem("beyondcampus_user");
+                localStorage.removeItem("beyondcampus_token");
+            } else {
+                // Network error / server spin-up: preserve cached user so UI doesn't flicker/lock out
+                const saved = localStorage.getItem("beyondcampus_user");
+                if (saved) {
+                    try {
+                        setCurrentUser(JSON.parse(saved));
+                    } catch {
+                        setCurrentUser(null);
+                    }
+                }
+            }
         } finally {
             setLoading(false);
         }
     }, []);
 
-    // Automatically verify HTTP-only cookie on app mount
+    // Automatically verify credentials on app mount
     useEffect(() => {
         checkAuth();
     }, [checkAuth]);
@@ -35,9 +59,17 @@ export function AuthProvider({ children }) {
     // Handle user login and update state
     const login = async (credentials) => {
         const response = await loginUser(credentials);
-        const userData = response?.data?.user || response?.data;
+        const data = response?.data;
+        const userData = data?.user || (data?._id ? data : null);
+        const token = data?.accessToken;
+
+        if (token) {
+            localStorage.setItem("beyondcampus_token", token);
+        }
+
         if (userData && userData._id) {
             setCurrentUser(userData);
+            localStorage.setItem("beyondcampus_user", JSON.stringify(userData));
         } else {
             await checkAuth();
         }
@@ -53,14 +85,18 @@ export function AuthProvider({ children }) {
         } finally {
             setCurrentUser(null);
             localStorage.removeItem("beyondcampus_user");
+            localStorage.removeItem("beyondcampus_token");
         }
     };
 
     // Update current user state (e.g. after avatar / cover upload)
     const updateUser = (updatedData) => {
         setCurrentUser((prev) => {
-            if (!prev) return updatedData;
-            return { ...prev, ...updatedData };
+            const next = prev ? { ...prev, ...updatedData } : updatedData;
+            if (next) {
+                localStorage.setItem("beyondcampus_user", JSON.stringify(next));
+            }
+            return next;
         });
     };
 

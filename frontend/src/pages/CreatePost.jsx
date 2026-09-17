@@ -312,6 +312,9 @@ function CreatePost() {
 
             formData.append("title", finalTitle);
             formData.append("content", content.trim());
+            if (image) {
+                formData.append("image", image);
+            }
 
             const response = await createPost(formData);
             const createdPost = response?.data?.data || response?.data || response;
