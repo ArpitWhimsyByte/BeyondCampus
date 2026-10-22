@@ -4,8 +4,18 @@ import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asynchandler } from "../utils/asynchandler.js";
 import { uploadOnCloudinary } from "../utils/cloudinary.js";
+import crypto from "crypto";
+import { sendVerificationEmail } from "../utils/emailService.js";
 
 
+const verificationToken = crypto.randomBytes(32).toString("hex");
+
+const verificationTokenHash = crypto
+    .createHash("sha256")
+    .update(verificationToken)
+    .digest("hex");
+
+const verificationExpires = new Date(Date.now() + 15 * 60 * 1000);
 const generateAccessTokenAndRefreshToken=async(userId)=>{
     try {
         const user=await User.findById(userId);
@@ -135,13 +145,22 @@ const registerUser = asynchandler(async (req, res) => {
         coverImage: coverImage?.url || "",
         email: normalizedEmail,
         password,
-        username: normalizedUsername
+        username: normalizedUsername,
+        isEmailVerified: false,
+emailVerificationTokenHash: verificationTokenHash,
+emailVerificationExpires: verificationExpires
     });
 
     const createdUser = await User.findById(user._id).select(
         "-password -refreshToken"
-    );
+    ); 
+    const verificationUrl =
+    `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}`;
 
+await sendVerificationEmail({
+    to: normalizedEmail,
+    verificationUrl
+});
     if (!createdUser) {
         throw new ApiError(500, "Something went wrong while registering the user");
     }
@@ -152,6 +171,51 @@ const registerUser = asynchandler(async (req, res) => {
             new ApiResponse(201, createdUser, "User registered Successfully")
         );
 });
+
+const verifyEmail = asynchandler(async (req, res) => {
+    const { token } = req.query;
+
+    if (!token) {
+        throw new ApiError(400, "Verification token is required");
+    }
+
+    // Hash the token received from the email link
+    const tokenHash = crypto
+        .createHash("sha256")
+        .update(token)
+        .digest("hex");
+
+    // Find a user with a matching, unexpired token
+    const user = await User.findOne({
+        emailVerificationTokenHash: tokenHash,
+        emailVerificationExpires: { $gt: new Date() }
+    });
+
+    if (!user) {
+        throw new ApiError(
+            400,
+            "Invalid or expired verification link"
+        );
+    }
+
+    // Mark the email as verified
+    user.isEmailVerified = true;
+
+    // Invalidate the token so it cannot be reused
+    user.emailVerificationTokenHash = undefined;
+    user.emailVerificationExpires = undefined;
+
+    await user.save();
+
+    return res.status(200).json(
+        new ApiResponse(
+            200,
+            {},
+            "Email verified successfully. You can now log in."
+        )
+    );
+});
+
 const logoutUser=asynchandler(async(req,res)=>{
   await User.findByIdAndUpdate(
     req.user._id,{
@@ -257,4 +321,4 @@ const getUserProfile = asynchandler(async (req, res) => {
     .json(new ApiResponse(200, user, "User profile fetched successfully"));
 });
 
-export { registerUser, loginUser, logoutUser, getCurrentUser, updateUserCoverImage, updateUserAvatar, getUserProfile }
+export { registerUser, loginUser, logoutUser, getCurrentUser, updateUserCoverImage, updateUserAvatar, getUserProfile, verifyEmail }

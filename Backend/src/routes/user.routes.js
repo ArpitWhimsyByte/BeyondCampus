@@ -2,6 +2,7 @@ import { Router } from "express";
 import { upload } from "../middlewares/multer.middleware.js";
 import { getCurrentUser, getUserProfile, loginUser, logoutUser, registerUser, updateUserAvatar, updateUserCoverImage } from "../controllers/user.controller.js";
 import { verifyJWT } from "../middlewares/authmiddleware.js";
+import { verifyEmail } from "../controllers/user.controller.js";
 
 const router=Router()
 
@@ -22,4 +23,5 @@ router.route("/current-user").get(verifyJWT, getCurrentUser)
 router.route("/profile/:userId").get(getUserProfile)
 router.route("/cover-image").patch(verifyJWT, upload.single("coverImage"), updateUserCoverImage)
 router.route("/avatar").patch(verifyJWT, upload.single("avatar"), updateUserAvatar)
+router.route("/verify-email").get(verifyEmail);
 export default router
