@@ -9,7 +9,7 @@ import CreatePost from "./pages/CreatePost";
 import PostDetails from "./pages/PostDetails";
 import Profile from "./pages/Profile";
 import PostSuccessTakeover from "./components/PostSuccessTakeover";
-
+import VerifyEmail from "./pages/VerifyEmail";
 function App() {
     return (
         <BrowserRouter>
@@ -51,7 +51,7 @@ function App() {
                         }
                     />
                     <Route path="/profile/:userId" element={<Profile />} />
-
+                    <Route path="/verify-email" element={<VerifyEmail />} />
                 </Routes>
             </AuthProvider>
         </BrowserRouter>

@@ -61,6 +61,14 @@ const loginUser = asynchandler(async (req, res) => {
     if (!isPasswordValid) {
         throw new ApiError(401, "Invalid User Credentials");
     }
+    console.log("Email verified status:", user.isEmailVerified)
+    console.log("User email:", user.email)
+    if (!user.isEmailVerified) {
+    throw new ApiError(
+        403,
+        "Please verify your email before logging in",
+    );
+}
 
     const { accessToken, refreshToken } = await generateAccessTokenAndRefreshToken(user._id);
     console.log("ACCESS TOKEN VALUE:", accessToken);
@@ -138,7 +146,8 @@ const registerUser = asynchandler(async (req, res) => {
         coverImage = await uploadOnCloudinary(coverImageLocalpath);
         console.log("Cover image upload result:", coverImage?.url);
     }
-
+    // console.log(verificationToken);
+    // console.log(emailVerificationTokenHash);
     const user = await User.create({
         fullname: fullname.trim(),
         avatar: avatar.url,
@@ -197,7 +206,8 @@ const verifyEmail = asynchandler(async (req, res) => {
             "Invalid or expired verification link"
         );
     }
-
+console.log("Verifying email for:", user.email);
+console.log("Before update:", user.isEmailVerified);
     // Mark the email as verified
     user.isEmailVerified = true;
 
@@ -206,7 +216,7 @@ const verifyEmail = asynchandler(async (req, res) => {
     user.emailVerificationExpires = undefined;
 
     await user.save();
-
+    console.log("After update: ",user.isEmailVerified);
     return res.status(200).json(
         new ApiResponse(
             200,
