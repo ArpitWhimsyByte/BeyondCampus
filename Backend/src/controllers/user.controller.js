@@ -199,7 +199,9 @@ const verifyEmail = asynchandler(async (req, res) => {
         emailVerificationTokenHash: tokenHash,
         emailVerificationExpires: { $gt: new Date() }
     });
-
+    console.log("VERIFY EMAIL - matched user:", user.email);
+console.log("VERIFY EMAIL - before save:", user.isEmailVerified);
+console.log("VERIFY EMAIL - database:", user.db.name);
     if (!user) {
         throw new ApiError(
             400,
@@ -216,7 +218,7 @@ console.log("Before update:", user.isEmailVerified);
     user.emailVerificationExpires = undefined;
 
     await user.save();
-    console.log("After update: ",user.isEmailVerified);
+    console.log("VERIFY EMAIL - after save:", user.isEmailVerified);
     return res.status(200).json(
         new ApiResponse(
             200,
